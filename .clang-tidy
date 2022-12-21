@@ -1,0 +1,7 @@
+---
+Checks: '-*,modernize-use-nullptr,modernize-use-using,modernize-deprecated-headers,modernize-avoid-c-arrays,modernize-macro-to-enum,modernize-loop-convert,readability-magic-numbers,readability-duplicate-include,readability-else-after-return,readability-redundant-preprocessor,performance-move-const-arg,performance-unnecessary-value-param,google-readability-casting,google-build-namespaces,cppcoreguidelines-pro-bounds-pointer-arithmetic,cppcoreguidelines-narrowing-conversions,cppcoreguidelines-init-variables,cppcoreguidelines-interfaces-global-init,cppcoreguidelines-avoid-goto,cppcoreguidelines-avoid-non-const-global-variables,bugprone-*'
+# Checks: '*'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*'
+FormatStyle: none
+

@@ -15,6 +15,12 @@ enc28j60::enc28j60(Config &config) : config_{config} {}
 
 bool enc28j60::init(const MacAddress &mac_address) {
 
+    config_.Cs.set();
+
+    config_.Rst.reset();
+    hal::sleep_milli(100);
+    config_.Rst.set();
+
     write_op(ENC28J60_SOFT_RESET, 0x00, ENC28J60_SOFT_RESET);
     hal::sleep_milli(2);
     /** Oscillator ready */
@@ -84,7 +90,7 @@ bool enc28j60::init(const MacAddress &mac_address) {
     return rev > 0;
 }
 
-bool enc28j60::is_link_up() { return ((read_phy(PHSTAT2) >> 2) & 1) == false; }
+bool enc28j60::is_link_up() { return (read_phy(PHSTAT2) & PHSTAT2_LSTAT); }
 
 void enc28j60::write_op(const uint8_t op, const uint8_t addr, const uint8_t data) {
     config_.Cs.reset();
@@ -126,13 +132,13 @@ void enc28j60::write_reg(const uint8_t addr, const uint8_t data) {
 
 void enc28j60::write_reg16(const uint8_t addr, const uint16_t data) {
     //    enc28j60::write_op_16bit(ENC28J60_WRITE_CTRL_REG, addr, data);
-    enc28j60::write_reg(addr, data & 0xff);
-    enc28j60::write_reg(addr + 1, data >> 8);
+    write_reg(addr, data & 0xff);
+    write_reg(addr + 1, data >> 8);
 }
 
 uint8_t enc28j60::read_reg(const uint8_t reg) {
-    enc28j60::select_bank(reg);
-    return enc28j60::read_op(ENC28J60_READ_CTRL_REG, reg);
+    select_bank(reg);
+    return read_op(ENC28J60_READ_CTRL_REG, reg);
 }
 
 void enc28j60::write_phy(const uint8_t reg, const uint16_t data) {
@@ -168,15 +174,17 @@ uint16_t enc28j60::read_phy(const uint8_t reg) {
      * accessed is unimportant. */
     uint8_t out_L = enc28j60::read_reg(MIRDL);
     uint8_t out_H = enc28j60::read_reg(MIRDH);
-    return out_H | out_L;
+    return (out_H << 8) | out_L;
 }
 
-void enc28j60::read_buff(uint8_t *src, size_t len) {
+uint8_t enc28j60::read_buff(uint8_t *src, size_t len) {
     config_.Cs.reset();
     const uint8_t operation = ENC28J60_READ_BUF_MEM;
     config_.spi.write(&operation, 1);
-    config_.spi.read(src, len);
+    auto ret = config_.spi.read(src, len);
     config_.Cs.set();
+
+    return ret;
 }
 
 void enc28j60::write_buff(const uint8_t *src, size_t len) {
@@ -185,6 +193,69 @@ void enc28j60::write_buff(const uint8_t *src, size_t len) {
     config_.spi.write(&operation, 1);
     config_.spi.write(src, len);
     config_.Cs.set();
+}
+
+uint8_t enc28j60::get_number_of_packets() { return read_reg(EPKTCNT); }
+
+uint8_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
+                                      const size_t max_length) {
+    //    write_reg16(ERDPT, next_packet_pointer);
+    //    PacketMetaInfo info{};
+    //    read_buff(reinterpret_cast<uint8_t *>(&info), sizeof(PacketMetaInfo));
+
+    const uint8_t bytes_to_be_received =
+        info.byte_count > max_length ? max_length : info.byte_count;
+
+    auto bytes_read = read_buff(dst, bytes_to_be_received);
+
+    next_packet_pointer = info.next_packet_pointer;
+    write_reg16(ERXRDPT, info.next_packet_pointer);
+    write_op(ENC28J60_BIT_FIELD_SET, ECON2, ECON2_PKTDEC);
+
+    return bytes_read;
+}
+
+bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
+
+    /* Latest errata sheet: DS80349C
+     * always reset transmit logic (Errata Issue 12) */
+    write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
+    write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
+
+    // Set the write pointer to start of transmit buffer area
+    write_reg16(ETXST, TXSTART_INIT);
+    write_reg16(EWRPT, TXSTART_INIT);
+
+    // Set the TXND pointer to correspond to the packet size given
+    // write per-packet control byte (0x00 means use macon3 settings)
+    //    write_op(ENC28J60_WRITE_BUF_MEM, 0, 0x00);
+    const uint8_t PPC = 0;
+    write_buff(&PPC, 1);
+    write_buff(src, len);
+
+    write_reg16(ETXND, TXSTART_INIT + len);
+
+    // Send data over network
+    write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
+
+    // http://ww1.microchip.com/downloads/en/DeviceDoc/80349c.pdf
+    while (not(read_reg(EIR) & EIR_TXIF))
+        ;
+
+    uint8_t status = read_reg(ESTAT);
+    if (status & ESTAT_TXABRT) {
+        return false;
+    }
+
+    return true;
+}
+
+enc28j60::PacketMetaInfo enc28j60::get_incoming_packet_info() {
+    PacketMetaInfo ret{};
+    write_reg16(ERDPT, next_packet_pointer);
+    read_buff(reinterpret_cast<uint8_t *>(&ret), sizeof(PacketMetaInfo));
+
+    return ret;
 }
 
 } // namespace drivers::enc28j60

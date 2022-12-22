@@ -182,6 +182,7 @@ constexpr uint16_t PHSTAT1_PFDPX = 0x1000;
 constexpr uint16_t PHSTAT1_PHDPX = 0x0800;
 constexpr uint16_t PHSTAT1_LLSTAT = 0x0004;
 constexpr uint16_t PHSTAT1_JBSTAT = 0x0002;
+constexpr uint16_t PHSTAT2_LSTAT = 0x0400;
 // ENC28J60 PHY PHCON2 Register Bit Definitions
 constexpr uint16_t PHCON2_FRCLINK = 0x4000;
 constexpr uint16_t PHCON2_TXDIS = 0x2000;

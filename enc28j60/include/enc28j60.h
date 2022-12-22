@@ -41,6 +41,10 @@ class enc28j60 {
 
     bool init(const MacAddress &mac_address);
     bool is_link_up();
+    uint8_t get_number_of_packets();
+    uint8_t get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst, const size_t max_length);
+    PacketMetaInfo get_incoming_packet_info();
+    bool send_packet(const uint8_t *src, const size_t len);
 
   private:
     Config &config_;
@@ -56,9 +60,10 @@ class enc28j60 {
     void write_phy(const uint8_t reg, const uint16_t data);
     uint16_t read_phy(const uint8_t reg);
 
-    void read_buff(uint8_t *dst, size_t len);
+    uint8_t read_buff(uint8_t *dst, size_t len);
     void write_buff(const uint8_t *src, size_t len);
 
     uint8_t current_register_bank;
+    uint16_t next_packet_pointer;
 };
 } // namespace drivers::enc28j60

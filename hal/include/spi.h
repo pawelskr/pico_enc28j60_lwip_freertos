@@ -8,7 +8,6 @@ namespace drivers::spi {
 struct Config {
     spi_inst_t *spi_handle;
     uint8_t CLK_Pin;
-    uint8_t CS_Pin;
     uint8_t MOSI_Pin;
     uint8_t MISO_Pin;
     uint32_t baudrate_Hz;
@@ -18,6 +17,7 @@ struct Config {
 };
 
 class SpiWrapper : public ISpi {
+  public:
     explicit SpiWrapper(const Config &confiig);
 
     bool init();

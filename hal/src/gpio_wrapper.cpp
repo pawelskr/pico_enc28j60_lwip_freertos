@@ -10,12 +10,8 @@ void Gpio::init() {
     gpio_set_dir(pin_, dir_);
 }
 
-void Gpio::set() {
-    gpio_put(pin_, 1);
-}
+void Gpio::set() { gpio_put(pin_, 1); }
 
-void Gpio::reset() {
-    gpio_put(pin_, 0);
-}
+void Gpio::reset() { gpio_put(pin_, 0); }
 
 } // namespace drivers::gpio

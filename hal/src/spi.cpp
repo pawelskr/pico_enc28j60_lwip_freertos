@@ -18,11 +18,8 @@ bool SpiWrapper::init() {
     return true;
 }
 
-bool SpiWrapper::read(uint8_t *dst, const size_t len) {
-    if (spi_read_blocking(config_.spi_handle, 0, dst, len) != len) {
-        return false;
-    }
-    return true;
+size_t SpiWrapper::read(uint8_t *dst, const size_t len) {
+    return spi_read_blocking(config_.spi_handle, 0, dst, len);
 }
 
 bool SpiWrapper::write(const uint8_t *src, const size_t len) {

@@ -1,19 +1,39 @@
+#include "alarm.h"
 #include "enc28j60.h"
 #include "enc28j60_registers.h"
+#include "gpio_wrapper.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
 #include "spi.h"
 #include <array>
+#include <cstring>
 #include <stdio.h>
 
-#define RST_PIN 0
-#define CS_PIN 1
-#define MISO_PIN 4
-#define MOSI_PIN 3
-#define CLK_PIN 2
-#define ENC_IRQ 15
-#define ENC_SPI spi0
+#include "httpd.h"
+#include "lwip/dhcp.h"
+#include "lwip/inet.h"
+#include "lwip/init.h"
+#include "lwip/netif.h"
+#include "lwip/stats.h"
+#include "lwip/tcp.h"
+#include "lwip/timeouts.h"
+#include "netif/etharp.h"
 
+constexpr uint8_t MISO_PIN = 4;
+constexpr uint8_t MOSI_PIN = 3;
+constexpr uint8_t CLK_PIN = 2;
+constexpr uint8_t ENC_IRQ = 15;
+constexpr uint8_t LED_PIN = 25;
+
+drivers::gpio::Gpio EncRstPin{0, GPIO_OUT};
+drivers::gpio::Gpio EncCsPin{1, GPIO_OUT};
+drivers::spi::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 8 * 1000000};
+drivers::spi::SpiWrapper spi0_{spi0Config};
+
+drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, spi0_};
+drivers::enc28j60::enc28j60 eth_driver{EncConfig};
+
+drivers::gpio::Gpio BoardLed{LED_PIN, GPIO_OUT};
 
 void gpio_callback(uint gpio, uint32_t events) {
     // Put the GPIO event(s) that just happened into event_str
@@ -22,133 +42,136 @@ void gpio_callback(uint gpio, uint32_t events) {
     xd++;
 }
 
+#define ETHERNET_MTU 1500
+constexpr drivers::enc28j60::enc28j60::MacAddress mac{0x0a, 0xbd, 0x7d, 0x95, 0xd3, 0xa5};
 
+static err_t netif_output(struct netif *netif, struct pbuf *p) {
+    LINK_STATS_INC(link.xmit);
 
-std::array<uint8_t, 256> buffer{};
+    auto &controller = *static_cast<drivers::enc28j60::enc28j60 *>(netif->state);
+
+    if (not controller.send_packet(static_cast<uint8_t *>(p->payload), p->tot_len)) {
+        printf("Cannot sent packet....");
+        return ERR_ABRT;
+    }
+
+    printf("Sent packet with len %d[%d]!  %x:%x:%x:%x:%x:%x %x:%x:%x:%x:%x:%x \r\n", p->tot_len,
+           p->len, static_cast<uint8_t *>(p->payload)[0], static_cast<uint8_t *>(p->payload)[1],
+           static_cast<uint8_t *>(p->payload)[2], static_cast<uint8_t *>(p->payload)[3],
+           static_cast<uint8_t *>(p->payload)[4], static_cast<uint8_t *>(p->payload)[5],
+           static_cast<uint8_t *>(p->payload)[6], static_cast<uint8_t *>(p->payload)[7],
+           static_cast<uint8_t *>(p->payload)[8], static_cast<uint8_t *>(p->payload)[9],
+           static_cast<uint8_t *>(p->payload)[10], static_cast<uint8_t *>(p->payload)[11]
+
+    );
+    return ERR_OK;
+}
+
+static void netif_status_callback(struct netif *netif) {
+    printf("netif status changed %s\n", ip4addr_ntoa(netif_ip4_addr(netif)));
+}
+
+static void netif_link_callback(struct netif *netif) { printf("netif link changed\n"); }
+
+static err_t netif_init(struct netif *netif) {
+    netif->linkoutput = netif_output;
+    netif->output = etharp_output;
+    //    netif->output_ip6 = ethip6_output;
+    netif->mtu = ETHERNET_MTU;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET |
+                   NETIF_FLAG_IGMP | NETIF_FLAG_MLD6;
+    //    MIB2_INIT_NETIF(netif, snmp_ifType_ethernet_csmacd, 100000000);
+    memcpy(netif->hwaddr, mac.data(), sizeof(netif->hwaddr));
+    netif->hwaddr_len = sizeof(netif->hwaddr);
+    printf("LWIP Init \n");
+    return ERR_OK;
+}
+
+std::array<uint8_t, ETHERNET_MTU> buffer{};
 
 int main() {
     stdio_init_all();
 
-    const uint led_pin = 25;
+    EncRstPin.init();
+    EncCsPin.init();
+    BoardLed.init();
+    spi0_.init();
 
-    // Initialize LED pin
-    gpio_init(led_pin);
-    gpio_set_dir(led_pin, GPIO_OUT);
-
-    gpio_init(CS_PIN);
-    gpio_set_dir(CS_PIN, GPIO_OUT);
-    cs_deselect();
-
-    gpio_init(RST_PIN);
-    gpio_set_dir(RST_PIN, GPIO_OUT);
-    gpio_put(RST_PIN, 0);
-    sleep_ms(100);
-    gpio_put(RST_PIN, 1);
-
-    // SPI INIT HERE
+    sleep_ms(3000);
 
     // ENC28J60 INIT
-    /** Soft reset */
-    enc_write_op(ENC28J60_SOFT_RESET, 0x00, ENC28J60_SOFT_RESET);
-    sleep_ms(2);
-    /** Oscillator ready */
-    while (!(enc_read_reg(ESTAT) & ESTAT_CLKRDY))
+    if (not eth_driver.init(mac)) {
+        hal::panic();
+    }
+
+    netif net_if;
+
+    lwip_init();
+
+    if (netif_add(&net_if, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY,
+                  static_cast<void *>(&eth_driver), netif_init, netif_input) == nullptr) {
+        printf("mch_net_init: netif_add (mchdrv_init) failed\n");
+        return -1;
+    }
+
+    net_if.name[0] = 'e';
+    net_if.name[1] = '0';
+
+    netif_set_status_callback(&net_if, netif_status_callback);
+    netif_set_link_callback(&net_if, netif_link_callback);
+
+    netif_set_default(&net_if);
+    netif_set_up(&net_if);
+
+    dhcp_start(&net_if);
+    httpd_init();
+    pbuf *ptr = nullptr;
+
+    while (not eth_driver.is_link_up())
         ;
 
-    /** RX buffer ptr */
-    enc_write_reg16(ERXST, RXSTART_INIT);
-    enc_write_reg16(ERXRDPT, RXSTART_INIT);
-    enc_write_reg16(ERXND, RXSTOP_INIT);
-
-    /** TX buffer ptr */
-    enc_write_reg16(ETXST, TXSTART_INIT);
-    enc_write_reg16(ETXND, TXSTOP_INIT);
-
-    enc_write_phy(PHLCON, 0x476);
-
-    enc_read_phy(PHHID1);
-    /** FILTERS setup */
-    enc_write_reg(ERXFCON, ERXFCON_UCEN | ERXFCON_CRCEN | ERXFCON_PMEN | ERXFCON_BCEN);
-
-    enc_write_reg16(EPMM0, 0x303f);
-    enc_write_reg16(EPMCS, 0xf7f9);
-
-    /** Set the MARXEN bit in MACON1 to enable the MAC to receive frames. If using full duplex, most
-     * applications should also set TXPAUS and RXPAUS to allow IEEE defined flow control to function
-     */
-    enc_select_bank(MACON1);
-    enc_write_op(ENC28J60_BIT_FIELD_SET, MACON1, MACON1_MARXEN);
-    /** Configure the PADCFG, TXCRCEN and FULDPX bits of MACON3. */
-    enc_write_op(ENC28J60_BIT_FIELD_SET, MACON3, MACON3_PADCFG0 | MACON3_TXCRCEN | MACON3_FRMLNEN);
-
-    /** Program the MAMXFL registers with the maxi- mum frame length to be permitted to be received
-     * or transmitted. MAX PDU - offset */
-    enc_write_reg16(MAMXFL, 1500);
-
-    /** Configure the Back-to-Back Inter-Packet Gap register, MABBIPG. Most applications will pro-
-     * gram this register with 15h when Full-Duplex mode is used and 12h when Half-Duplex mode is
-     * used. */
-    enc_write_reg(MABBIPG, 0x12);
-    enc_read_reg(MABBIPG);
-    /** Configure the Non-Back-to-Back Inter-Packet Gap register low byte, MAIPGL. Most applications
-     * will program this register with 12h. If half duplex is used, the Non-Back-to-Back
-     * Inter-Packet Gap register high byte, MAIPGH, should be programmed. Most applications will
-     * program this register to 0Ch.*/
-
-    enc_write_reg16(MAIPG, 0x0C12);
-    //    enc_write_reg(0x06 | 0x40 | 0x80, 0x0c);
-    //    enc_write_reg(0x07 | 0x40 | 0x80, 0x12);
-
-    enc_read_reg(MAIPG);
-    enc_read_reg(0x07 | 0x40 | 0x80);
-
-    uint8_t mac_read[6]{};
-    enc_write_reg(MAADR5, 0x0A);
-    enc_write_reg(MAADR4, 0xbd);
-    enc_write_reg(MAADR3, 0x7d);
-    enc_write_reg(MAADR2, 0x95);
-    enc_write_reg(MAADR1, 0xd3);
-    enc_write_reg(MAADR0, 0xa5);
-
-    mac_read[5] = enc_read_reg(MAADR5);
-    mac_read[4] = enc_read_reg(MAADR4);
-    mac_read[3] = enc_read_reg(MAADR3);
-    mac_read[2] = enc_read_reg(MAADR2);
-    mac_read[1] = enc_read_reg(MAADR1);
-    mac_read[0] = enc_read_reg(MAADR0);
-
-    enc_write_phy(PHCON2, PHCON2_HDLDIS);
-
-    /** Start receiving */
-    enc_select_bank(ECON1);
-    enc_write_op(ENC28J60_BIT_FIELD_SET, EIE, EIE_INTIE | EIE_PKTIE | EIR_LINKIF);
-    enc_write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
-
-    uint8_t rev = enc_read_reg(EREVID);
-
-    while (not((enc_read_phy(PHSTAT2) >> 2) & 1))
-        ;
-
-    uint8_t number_of_packets = 0;
-    // Loop forever
     while (true) {
-        number_of_packets = enc_read_reg(EPKTCNT);
-        if (number_of_packets > 0) {
-            enc_write_reg16(ERDPT, rx_packet_pointer);
-            PacketMetaInfo info{};
-            enc_read_buff(reinterpret_cast<uint8_t *>(&info), 6);
-            buffer.fill(0);
-            enc_read_buff(buffer.data(), info.byte_count);
-            rx_packet_pointer = info.next_packet_pointer;
-            enc_write_reg16(ERXRDPT, info.next_packet_pointer);
-            asm volatile("BKPT");
+        if (eth_driver.link_state_changed()) {
+            if (eth_driver.is_link_up()) {
+                netif_set_link_up(&net_if);
+                printf("**** NETIF: LINK IS UP!\r\n");
+            } else {
+                netif_set_link_down(&net_if);
+                printf("**** NETIF: LINK IS DOWN!\r\n");
+            }
         }
 
+        if (eth_driver.get_number_of_packets() > 0) {
+            auto packet_info = eth_driver.get_incoming_packet_info();
+            auto bytes_received =
+                eth_driver.get_incoming_packet(packet_info, buffer.data(), buffer.max_size());
+            ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_POOL);
+            if (ptr != nullptr) {
+                pbuf_take(ptr, static_cast<const void *>(buffer.data()), packet_info.byte_count);
+
+                uint8_t *bffer = static_cast<uint8_t *>(ptr->payload);
+                printf("Received packet with len [%d/%d] %d!   DST: %x:%x:%x:%x:%x:%x  SRC: "
+                       "%x:%x:%x:%x:%x:%x \r\n",
+                       ptr->len, packet_info.byte_count, packet_info.next_packet_pointer, bffer[0],
+                       bffer[1], bffer[2], bffer[3], bffer[4], bffer[5], bffer[6], bffer[7],
+                       bffer[8], bffer[9], bffer[10], bffer[11]);
+
+                LINK_STATS_INC(link.recv);
+
+                if (net_if.input(ptr, &net_if) != ERR_OK) {
+                    printf("Error processing frame input\r\n");
+                    pbuf_free(ptr);
+                }
+            }
+
+            buffer.fill(0);
+        }
+
+        sys_check_timeouts();
         // Blink LED
-        printf("Blinking!\r\n");
-        gpio_put(led_pin, true);
+        BoardLed.set();
         sleep_ms(100);
-        gpio_put(led_pin, false);
+        BoardLed.reset();
         sleep_ms(100);
     }
 }

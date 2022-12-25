@@ -9,6 +9,7 @@
 #include <cstring>
 #include <stdio.h>
 
+#include "httpd.h"
 #include "lwip/dhcp.h"
 #include "lwip/inet.h"
 #include "lwip/init.h"
@@ -123,6 +124,7 @@ int main() {
     netif_set_up(&net_if);
 
     dhcp_start(&net_if);
+    httpd_init();
     pbuf *ptr = nullptr;
 
     while (not eth_driver.is_link_up())

@@ -21,7 +21,7 @@ class SpiWrapper : public ISpi {
     explicit SpiWrapper(const Config &confiig);
 
     bool init();
-    bool read(uint8_t *dst, const size_t len) override;
+    size_t read(uint8_t *dst, const size_t len) override;
     bool write(const uint8_t *src, const size_t len) override;
     bool transceive(const uint8_t *src, uint8_t *dst, const size_t tx_len,
                     const size_t rx_len) override;

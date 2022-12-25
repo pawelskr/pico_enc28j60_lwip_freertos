@@ -42,9 +42,10 @@ class enc28j60 {
     bool init(const MacAddress &mac_address);
     bool is_link_up();
     uint8_t get_number_of_packets();
-    uint8_t get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst, const size_t max_length);
+    size_t get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst, const size_t max_length);
     PacketMetaInfo get_incoming_packet_info();
     bool send_packet(const uint8_t *src, const size_t len);
+    bool link_state_changed();
 
   private:
     Config &config_;
@@ -65,5 +66,6 @@ class enc28j60 {
 
     uint8_t current_register_bank;
     uint16_t next_packet_pointer;
+    bool current_link_state;
 };
 } // namespace drivers::enc28j60

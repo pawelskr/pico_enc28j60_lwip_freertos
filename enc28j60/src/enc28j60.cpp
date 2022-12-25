@@ -197,16 +197,14 @@ void enc28j60::write_buff(const uint8_t *src, size_t len) {
 
 uint8_t enc28j60::get_number_of_packets() { return read_reg(EPKTCNT); }
 
-uint8_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
-                                      const size_t max_length) {
-    //    write_reg16(ERDPT, next_packet_pointer);
-    //    PacketMetaInfo info{};
-    //    read_buff(reinterpret_cast<uint8_t *>(&info), sizeof(PacketMetaInfo));
+size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
+                                     const size_t max_length) {
+    const size_t bytes_to_be_received = info.byte_count > max_length ? max_length : info.byte_count;
+    size_t bytes_read = 0;
 
-    const uint8_t bytes_to_be_received =
-        info.byte_count > max_length ? max_length : info.byte_count;
-
-    auto bytes_read = read_buff(dst, bytes_to_be_received);
+    if (dst != nullptr) {
+        bytes_read = read_buff(dst, bytes_to_be_received);
+    }
 
     next_packet_pointer = info.next_packet_pointer;
     write_reg16(ERXRDPT, info.next_packet_pointer);
@@ -256,6 +254,15 @@ enc28j60::PacketMetaInfo enc28j60::get_incoming_packet_info() {
     read_buff(reinterpret_cast<uint8_t *>(&ret), sizeof(PacketMetaInfo));
 
     return ret;
+}
+
+bool enc28j60::link_state_changed() {
+    if (current_link_state != is_link_up()) {
+        current_link_state = !current_link_state;
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace drivers::enc28j60

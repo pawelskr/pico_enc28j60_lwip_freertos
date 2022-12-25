@@ -48,13 +48,14 @@ static err_t netif_output(struct netif *netif, struct pbuf *p) {
     LINK_STATS_INC(link.xmit);
 
     auto &controller = *static_cast<drivers::enc28j60::enc28j60 *>(netif->state);
-    if (not controller.send_packet(static_cast<uint8_t *>(p->payload), p->len)) {
+
+    if (not controller.send_packet(static_cast<uint8_t *>(p->payload), p->tot_len)) {
         printf("Cannot sent packet....");
         return ERR_ABRT;
     }
 
-    printf("Sent packet with len %d!  %x:%x:%x:%x:%x:%x %x:%x:%x:%x:%x:%x \r\n", p->len,
-           static_cast<uint8_t *>(p->payload)[0], static_cast<uint8_t *>(p->payload)[1],
+    printf("Sent packet with len %d[%d]!  %x:%x:%x:%x:%x:%x %x:%x:%x:%x:%x:%x \r\n", p->tot_len,
+           p->len, static_cast<uint8_t *>(p->payload)[0], static_cast<uint8_t *>(p->payload)[1],
            static_cast<uint8_t *>(p->payload)[2], static_cast<uint8_t *>(p->payload)[3],
            static_cast<uint8_t *>(p->payload)[4], static_cast<uint8_t *>(p->payload)[5],
            static_cast<uint8_t *>(p->payload)[6], static_cast<uint8_t *>(p->payload)[7],
@@ -68,6 +69,9 @@ static err_t netif_output(struct netif *netif, struct pbuf *p) {
 static void netif_status_callback(struct netif *netif) {
     printf("netif status changed %s\n", ip4addr_ntoa(netif_ip4_addr(netif)));
 }
+
+static void netif_link_callback(struct netif *netif) { printf("netif link changed\n"); }
+
 static err_t netif_init(struct netif *netif) {
     netif->linkoutput = netif_output;
     netif->output = etharp_output;
@@ -93,6 +97,7 @@ int main() {
     spi0_.init();
 
     sleep_ms(3000);
+
     // ENC28J60 INIT
     if (not eth_driver.init(mac)) {
         hal::panic();
@@ -100,27 +105,19 @@ int main() {
 
     netif net_if;
 
-    ip4_addr myip_addr;
-    IP4_ADDR(&myip_addr, 192, 168, 68, 251);
-
-    ip4_addr netmask_addr;
-    IP4_ADDR(&netmask_addr, 255, 255, 255, 0);
-
-    ip4_addr gw_addr;
-    IP4_ADDR(&myip_addr, 192, 168, 68, 1);
-
     lwip_init();
-    // Add our netif to LWIP (netif_add calls our driver initialization function)
-    //    if (netif_add(&net_if, &myip_addr, &netmask_addr, &gw_addr, static_cast<void
-    //    *>(&eth_driver),
+
     if (netif_add(&net_if, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY,
                   static_cast<void *>(&eth_driver), netif_init, netif_input) == nullptr) {
         printf("mch_net_init: netif_add (mchdrv_init) failed\n");
         return -1;
     }
+
     net_if.name[0] = 'e';
     net_if.name[1] = '0';
+
     netif_set_status_callback(&net_if, netif_status_callback);
+    netif_set_link_callback(&net_if, netif_link_callback);
 
     netif_set_default(&net_if);
     netif_set_up(&net_if);
@@ -130,9 +127,17 @@ int main() {
 
     while (not eth_driver.is_link_up())
         ;
-    netif_set_link_up(&net_if);
 
     while (true) {
+        if (eth_driver.link_state_changed()) {
+            if (eth_driver.is_link_up()) {
+                netif_set_link_up(&net_if);
+                printf("**** NETIF: LINK IS UP!\r\n");
+            } else {
+                netif_set_link_down(&net_if);
+                printf("**** NETIF: LINK IS DOWN!\r\n");
+            }
+        }
 
         if (eth_driver.get_number_of_packets() > 0) {
             auto packet_info = eth_driver.get_incoming_packet_info();
@@ -140,16 +145,14 @@ int main() {
                 eth_driver.get_incoming_packet(packet_info, buffer.data(), buffer.max_size());
             ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_POOL);
             if (ptr != nullptr) {
-
                 pbuf_take(ptr, static_cast<const void *>(buffer.data()), packet_info.byte_count);
 
                 uint8_t *bffer = static_cast<uint8_t *>(ptr->payload);
-
-                printf("Received packet with len %d %d!   DST: %x:%x:%x:%x:%x:%x  SRC: "
+                printf("Received packet with len [%d/%d] %d!   DST: %x:%x:%x:%x:%x:%x  SRC: "
                        "%x:%x:%x:%x:%x:%x \r\n",
-                       packet_info.byte_count, packet_info.next_packet_pointer, bffer[0], bffer[1],
-                       bffer[2], bffer[3], bffer[4], bffer[5], bffer[6], bffer[7], bffer[8],
-                       bffer[9], bffer[10], bffer[11]);
+                       ptr->len, packet_info.byte_count, packet_info.next_packet_pointer, bffer[0],
+                       bffer[1], bffer[2], bffer[3], bffer[4], bffer[5], bffer[6], bffer[7],
+                       bffer[8], bffer[9], bffer[10], bffer[11]);
 
                 LINK_STATS_INC(link.recv);
 

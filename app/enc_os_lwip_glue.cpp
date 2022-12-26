@@ -20,14 +20,12 @@
 #include <pico/stdio.h>
 #endif
 
+constexpr uint32_t NETWORKING_CORE_ID = 1 << 1; // pin all networking functions to core1
 constexpr size_t ETHERNET_MTU = 1500;
-static drivers::enc28j60::enc28j60 *handle = nullptr;
+
 std::array<uint8_t, ETHERNET_MTU> ethernet_frame_buffer{};
 static netif net_if{};
 static SemaphoreHandle_t worker_sem{};
-static TaskHandle_t enc_task_handle{};
-
-void set_eth_driver_handle(drivers::enc28j60::enc28j60 *handle_) { handle = handle_; }
 
 err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
     LINK_STATS_INC(link.xmit);
@@ -113,15 +111,15 @@ static void enc_worker_thread(void *param) {
 
             ethernet_frame_buffer.fill(0);
         }
-        //        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
-err_t enc_driver_os_init(drivers::enc28j60::enc28j60 &eth_driver) {
+err_t enc_driver_os_init() {
 #if configUSE_CORE_AFFINITY && configNUM_CORES > 1
+    /** @note This should be bound to one core during initialisation */
     TaskHandle_t task_handle = xTaskGetCurrentTaskHandle();
     UBaseType_t affinity = vTaskCoreAffinityGet(task_handle);
-    // we must bind the main task to one core during init
     vTaskCoreAffinitySet(task_handle, 1 << portGET_CORE_ID());
 #endif
 
@@ -130,6 +128,7 @@ err_t enc_driver_os_init(drivers::enc28j60::enc28j60 &eth_driver) {
     xSemaphoreTake(init_sem, portMAX_DELAY);
 
     worker_sem = xSemaphoreCreateBinary();
+    TaskHandle_t enc_task_handle{};
 
     if (xTaskCreate(enc_worker_thread, "enc_worker", 1024, nullptr, tskIDLE_PRIORITY + 4,
                     &enc_task_handle) != pdPASS) {
@@ -137,7 +136,7 @@ err_t enc_driver_os_init(drivers::enc28j60::enc28j60 &eth_driver) {
     }
 
 #if configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    vTaskCoreAffinitySet(enc_task_handle, 1 << 1);
+    vTaskCoreAffinitySet(enc_task_handle, NETWORKING_CORE_ID);
 #endif
 
 #if configUSE_CORE_AFFINITY && configNUM_CORES > 1

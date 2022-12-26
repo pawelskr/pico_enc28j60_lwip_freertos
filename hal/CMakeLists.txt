@@ -1,7 +1,7 @@
 set(NAME hal)
 
 add_library(${NAME}
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/alarm.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/spi.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/gpio_wrapper.cpp
         )

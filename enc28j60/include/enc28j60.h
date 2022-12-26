@@ -1,4 +1,11 @@
 #pragma once
+
+/**
+ * @note This driver bases on EtherCard repository.
+ * License: GPL-2.0 license
+ * URL: https://github.com/njh/EtherCard
+ */
+
 #include "igpio.h"
 #include "ispi.h"
 #include <array>

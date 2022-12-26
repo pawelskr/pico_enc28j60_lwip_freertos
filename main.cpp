@@ -1,17 +1,17 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "alarm.h"
 #include "enc28j60.h"
-#include "enc28j60_registers.h"
 #include "enc_os_lwip_glue.h"
 #include "gpio_wrapper.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
 #include "spi.h"
-#include <array>
-#include <cstring>
-#include <stdio.h>
+#include "utils.h"
+
+#if !NO_SYS
+void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
+#endif
 
 constexpr uint8_t MISO_PIN = 4;
 constexpr uint8_t MOSI_PIN = 3;
@@ -29,8 +29,6 @@ drivers::enc28j60::enc28j60 eth_driver{EncConfig};
 
 drivers::gpio::Gpio BoardLed{LED_PIN, GPIO_OUT};
 
-void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
-
 void main_task(void *params) {
     if (not eth_driver.init(mac)) {
         hal::panic();
@@ -39,7 +37,7 @@ void main_task(void *params) {
     while (not eth_driver.is_link_up())
         ;
 
-    if (enc_driver_os_init(eth_driver) != ERR_OK) {
+    if (enc_driver_os_init() != ERR_OK) {
         hal::panic();
     }
 
@@ -55,21 +53,6 @@ void main_task(void *params) {
     }
 }
 
-void vLunch(void) {
-    TaskHandle_t task;
-    xTaskCreate(main_task, "TestMainThread", configMINIMAL_STACK_SIZE, nullptr,
-                tskIDLE_PRIORITY + 1, &task);
-
-#if NO_SYS && configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    // we must bind the main task to one core (well at least while the init is called)
-    // (note we only do this in NO_SYS mode, because cyw43_arch_freertos
-    // takes care of it otherwise)
-    vTaskCoreAffinitySet(task, 1);
-#endif
-    vTaskCoreAffinitySet(task, 1);
-    vTaskStartScheduler();
-}
-
 int main() {
     stdio_init_all();
 
@@ -78,7 +61,16 @@ int main() {
     BoardLed.init();
     spi0_.init();
 
-    vLunch();
+    TaskHandle_t task{};
+    xTaskCreate(main_task, "TestMainThread", configMINIMAL_STACK_SIZE, nullptr,
+                tskIDLE_PRIORITY + 1, &task);
+
+#if NO_SYS && configUSE_CORE_AFFINITY && configNUM_CORES > 1
+    // If NO_SYS is set, then we must bind the main task to one core (at least while the init is
+    // called)
+    vTaskCoreAffinitySet(task, 1);
+#endif
+    vTaskStartScheduler();
 
     return 0;
 }

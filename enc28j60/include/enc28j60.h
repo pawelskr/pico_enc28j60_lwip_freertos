@@ -1,4 +1,11 @@
 #pragma once
+
+/**
+ * @note This driver bases on EtherCard repository.
+ * License: GPL-2.0 license
+ * URL: https://github.com/njh/EtherCard
+ */
+
 #include "igpio.h"
 #include "ispi.h"
 #include <array>
@@ -61,7 +68,7 @@ class enc28j60 {
     void write_phy(const uint8_t reg, const uint16_t data);
     uint16_t read_phy(const uint8_t reg);
 
-    uint8_t read_buff(uint8_t *dst, size_t len);
+    size_t read_buff(uint8_t *dst, size_t len);
     void write_buff(const uint8_t *src, size_t len);
 
     uint8_t current_register_bank;

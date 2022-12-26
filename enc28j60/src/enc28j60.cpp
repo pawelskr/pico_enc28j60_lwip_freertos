@@ -1,12 +1,13 @@
 #include "enc28j60.h"
-#include "alarm.h"
 #include "enc28j60_registers.h"
+#include "utils.h"
 
 namespace {
 constexpr uint16_t RXSTART_INIT = 0x0;
 constexpr uint16_t RXSTOP_INIT = (0x1FFF - 0x0600 - 1);
 constexpr uint16_t TXSTART_INIT = (0x1FFF - 0x0600);
 constexpr uint16_t TXSTOP_INIT = 0x1FFF;
+constexpr uint32_t AFTER_RESET_DELAY_MS = 100;
 } // namespace
 
 namespace drivers::enc28j60 {
@@ -14,11 +15,10 @@ namespace drivers::enc28j60 {
 enc28j60::enc28j60(Config &config) : config_{config} {}
 
 bool enc28j60::init(const MacAddress &mac_address) {
-
     config_.Cs.set();
 
     config_.Rst.reset();
-    hal::sleep_milli(100);
+    hal::sleep_milli(AFTER_RESET_DELAY_MS);
     config_.Rst.set();
 
     write_op(ENC28J60_SOFT_RESET, 0x00, ENC28J60_SOFT_RESET);
@@ -177,7 +177,7 @@ uint16_t enc28j60::read_phy(const uint8_t reg) {
     return (out_H << 8) | out_L;
 }
 
-uint8_t enc28j60::read_buff(uint8_t *src, size_t len) {
+size_t enc28j60::read_buff(uint8_t *src, size_t len) {
     config_.Cs.reset();
     const uint8_t operation = ENC28J60_READ_BUF_MEM;
     config_.spi.write(&operation, 1);
@@ -226,7 +226,6 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
 
     // Set the TXND pointer to correspond to the packet size given
     // write per-packet control byte (0x00 means use macon3 settings)
-    //    write_op(ENC28J60_WRITE_BUF_MEM, 0, 0x00);
     const uint8_t PPC = 0;
     write_buff(&PPC, 1);
     write_buff(src, len);
@@ -236,7 +235,6 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
     // Send data over network
     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
 
-    // http://ww1.microchip.com/downloads/en/DeviceDoc/80349c.pdf
     while (not(read_reg(EIR) & EIR_TXIF))
         ;
 

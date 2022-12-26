@@ -177,7 +177,7 @@ uint16_t enc28j60::read_phy(const uint8_t reg) {
     return (out_H << 8) | out_L;
 }
 
-uint8_t enc28j60::read_buff(uint8_t *src, size_t len) {
+size_t enc28j60::read_buff(uint8_t *src, size_t len) {
     config_.Cs.reset();
     const uint8_t operation = ENC28J60_READ_BUF_MEM;
     config_.spi.write(&operation, 1);
@@ -204,6 +204,11 @@ size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
 
     if (dst != nullptr) {
         bytes_read = read_buff(dst, bytes_to_be_received);
+    }
+
+    while (bytes_read < bytes_to_be_received) {
+        bytes_read += read_buff(dst + bytes_read, bytes_to_be_received - bytes_read);
+        write_reg16(ERXRDPT, next_packet_pointer + bytes_read);
     }
 
     next_packet_pointer = info.next_packet_pointer;

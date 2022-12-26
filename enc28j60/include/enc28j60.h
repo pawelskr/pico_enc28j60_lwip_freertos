@@ -61,7 +61,7 @@ class enc28j60 {
     void write_phy(const uint8_t reg, const uint16_t data);
     uint16_t read_phy(const uint8_t reg);
 
-    uint8_t read_buff(uint8_t *dst, size_t len);
+    size_t read_buff(uint8_t *dst, size_t len);
     void write_buff(const uint8_t *src, size_t len);
 
     uint8_t current_register_bank;

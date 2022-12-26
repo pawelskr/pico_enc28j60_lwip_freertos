@@ -38,15 +38,7 @@ err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
     }
     //
 #ifdef ENC_DEBUG_ON
-    printf("Sent packet with len %d[%d]!  %x:%x:%x:%x:%x:%x %x:%x:%x:%x:%x:%x \r\n", p->tot_len,
-           p->len, static_cast<uint8_t *>(p->payload)[0], static_cast<uint8_t *>(p->payload)[1],
-           static_cast<uint8_t *>(p->payload)[2], static_cast<uint8_t *>(p->payload)[3],
-           static_cast<uint8_t *>(p->payload)[4], static_cast<uint8_t *>(p->payload)[5],
-           static_cast<uint8_t *>(p->payload)[6], static_cast<uint8_t *>(p->payload)[7],
-           static_cast<uint8_t *>(p->payload)[8], static_cast<uint8_t *>(p->payload)[9],
-           static_cast<uint8_t *>(p->payload)[10], static_cast<uint8_t *>(p->payload)[11]
-
-    );
+    printf("Sent packet with len %d[%d]!\r\n", p->len, p->tot_len);
 #endif
     return ERR_OK;
 }
@@ -101,6 +93,10 @@ static void enc_worker_thread(void *param) {
                           packet_info.byte_count);
 
                 LINK_STATS_INC(link.recv);
+#ifdef ENC_DEBUG_ON
+                printf("Received packet with len %d[%d]!\r\n", bytes_received,
+                       packet_info.byte_count);
+#endif
 
                 if (net_if.input(ptr, &net_if) != ERR_OK) {
                     printf("Error processing frame input\r\n");

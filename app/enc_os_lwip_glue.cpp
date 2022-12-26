@@ -58,12 +58,10 @@ static err_t enc_eth_netif_init(struct netif *netif) {
 }
 
 static void netif_status_callback(struct netif *netif) {
-    //    printf("netif status changed %s\n", ip4addr_ntoa(netif_ip4_addr(netif)));
+    printf("netif status changed %s\n", ip4addr_ntoa(netif_ip4_addr(netif)));
 }
 
-static void netif_link_callback(struct netif *netif) {
-    //    printf("netif link changed\n");
-}
+static void netif_link_callback(struct netif *netif) { printf("netif link changed\n"); }
 
 static void enc_worker_thread(void *param) {
     xSemaphoreTake(worker_sem, portMAX_DELAY);

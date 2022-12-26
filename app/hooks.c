@@ -1,6 +1,3 @@
-//
-// Created by Pawel-MBP on 26/12/2022.
-//
 #include "FreeRTOS.h"
 #include "task.h"
 

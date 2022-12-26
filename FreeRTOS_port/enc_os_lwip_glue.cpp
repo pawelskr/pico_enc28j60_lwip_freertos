@@ -83,7 +83,6 @@ static void enc_worker_thread(void *param) {
     pbuf *ptr = nullptr;
 
     while (true) {
-//        LOCK_TCPIP_CORE();
         if (eth_driver.link_state_changed()) {
             if (eth_driver.is_link_up()) {
                 netif_set_link_up(&net_if);
@@ -94,24 +93,14 @@ static void enc_worker_thread(void *param) {
             }
         }
 
-        if (eth_driver.get_number_of_packets() > 0) {
+        while (eth_driver.get_number_of_packets() > 0) {
             auto packet_info = eth_driver.get_incoming_packet_info();
             auto bytes_received = eth_driver.get_incoming_packet(
                 packet_info, ethernet_frame_buffer.data(), ethernet_frame_buffer.max_size());
-            ptr = pbuf_alloc(PBUF_RAW, bytes_received, PBUF_POOL);
+            ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_POOL);
             if (ptr != nullptr) {
                 pbuf_take(ptr, static_cast<const void *>(ethernet_frame_buffer.data()),
-                          bytes_received);
-
-#ifdef ENC_DEBUG_ON
-//                        //                uint8_t *bffer = static_cast<uint8_t *>(ptr->payload);
-//                        //                printf("Received packet with len [%d/%d] %d!   DST:
-//                        //                %x:%x:%x:%x:%x:%x
-//        / SRC:" /                       "%x:%x:%x:%x:%x:%x \r\n", / ptr->len,
-//        / packet_info.byte_count, packet_info.next_packet_pointer, / bffer[0], bffer[1], bffer[2],
-//        / bffer[3], bffer[4], bffer[5], bffer[6], /                       bffer[7], bffer[8],
-//        / bffer[9], bffer[10], bffer[11]);
-#endif
+                          packet_info.byte_count);
 
                 LINK_STATS_INC(link.recv);
 
@@ -124,8 +113,7 @@ static void enc_worker_thread(void *param) {
 
             ethernet_frame_buffer.fill(0);
         }
-//        UNLOCK_TCPIP_CORE();
-        vTaskDelay(pdMS_TO_TICKS(20));
+        //        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
@@ -143,14 +131,13 @@ err_t enc_driver_os_init(drivers::enc28j60::enc28j60 &eth_driver) {
 
     worker_sem = xSemaphoreCreateBinary();
 
-    if (xTaskCreate(enc_worker_thread, "enc_worker", 4048, nullptr, tskIDLE_PRIORITY + 4,
+    if (xTaskCreate(enc_worker_thread, "enc_worker", 1024, nullptr, tskIDLE_PRIORITY + 4,
                     &enc_task_handle) != pdPASS) {
         return ERR_ABRT;
     }
 
 #if configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    //    vTaskCoreAffinitySet(enc_task_handle, 1 << portGET_CORE_ID());
-    vTaskCoreAffinitySet(enc_task_handle, 1);
+    vTaskCoreAffinitySet(enc_task_handle, 1 << 1);
 #endif
 
 #if configUSE_CORE_AFFINITY && configNUM_CORES > 1

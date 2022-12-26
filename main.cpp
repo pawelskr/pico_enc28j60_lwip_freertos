@@ -66,6 +66,7 @@ void vLunch(void) {
     // takes care of it otherwise)
     vTaskCoreAffinitySet(task, 1);
 #endif
+    vTaskCoreAffinitySet(task, 1);
     vTaskStartScheduler();
 }
 
